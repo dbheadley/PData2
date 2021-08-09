@@ -1,0 +1,113 @@
+%% mergerowpd
+% Concatenates entries with the same group status
+
+%% Syntax
+%# newPData = mergerowpd(pData, selCols, grpCols)
+%# newPData = mergerowpd(pData, selCols, grpCols, ..., 'FUNC', rowFunc)
+%# newPData = mergerowpd(pData, selCols, grpCols, ..., 'SKIPEMPTY')
+
+%% Description
+% Each row of pData that shares the same values in grpCols the selCols are
+% concatenated into a single new pData entry.
+
+% INPUT
+% * pData - a pData cell array
+% * selCols - columns to collapse
+% * grpCols - columns to use when grouping columns that will be collapsed.
+%   If it is empty, then all rows are merged
+
+% OPTIONAL
+% Arguments accepted by retcolpd can be passed
+% 'FUNC' - a function handle, applied to each row of entries. The function
+% should return accept a cell array the same length as selCols, and return
+% a cell array the same length as selCols. By default the function is
+% @(x)x.
+% 'SKIPEMPTY' - leaves out rows with empty entries.
+
+% OUTPUT
+% * newPData - a pData cell array, the pData cell array with the replaced
+% collapsed entries.
+
+%% Example
+
+%% Executable code
+function newPData = mergerowpd(pData, selCols, grpCols, varargin)
+
+    % format inputs
+    if ischar(selCols)
+        selCols = {selCols};
+    end
+    
+    if ischar(grpCols)
+        grpCols = {grpCols};
+    end
+    
+    sharedCols = intersect(selCols, grpCols);
+    numShared = numel(sharedCols);
+    if numShared > 0
+      error('Some columns are shared by selCols and grpCols');
+    end
+    
+    if any(strcmp('FUNC', varargin))
+        rowFunc = varargin{find(strcmp('FUNC', varargin))+1};
+    else
+        rowFunc = @(x)x;
+    end
+    
+    allCols = [grpCols(:)' selCols(:)'];
+    if any(strcmp('SKIPEMPTY', varargin))
+      pData = @(x)retcolpd(x, allCols, 'SKIPEMPTY');
+    end
+    
+    if isempty(grpCols)
+      uniqRows = [];
+      typeList = ones(size(pData,1)-1,1);
+      numUniq = 1;
+    else
+      grpColInds = colindpd(pData, grpCols);
+      [uniqRows, ~, typeList] = uniqueCellRows(pData(2:end,grpColInds));
+      numUniq = size(uniqRows,1);
+    end
+    
+    newPData = makecolpd([], allCols, []);
+    newGrpColInds = colindpd(newPData, grpCols);
+    newSelColInds = colindpd(newPData, selCols);
+    selColInds = colindpd(pData, selCols);
+    numSelCols = length(selCols);
+    newPData(2:(numUniq+1), newGrpColInds) = uniqRows;
+    for j = 1:numUniq
+        currInds = find(typeList' == j);
+        currVals = cell(1,numSelCols);
+        for k = 1:length(currInds)
+          currVals(k,:) = rowFunc(pData(currInds(k)+1,selColInds));
+        end
+        for k = 1:length(newSelColInds)
+          newPData{j+1,newSelColInds(k)} = currVals(:, k);
+        end
+    end
+
+    
+function [uniq, m, n] = uniqueCellRows(cellArr)
+
+  numRows = size(cellArr, 1);
+  uniq = cellArr(1,:);
+  m = 1;
+  n = [1; nan(numRows-1,1)];
+  for j = 2:numRows
+    currRow = cellArr(j,:);
+    yesUniq = true;
+    numUniq = size(uniq,1);
+    for k = 1:numUniq
+      compRow = uniq(k,:);
+      if isequaln(currRow, compRow)
+        n(j) = k;
+        yesUniq = false;
+        break
+      end
+    end
+    if yesUniq
+      uniq(numUniq+1,:) = currRow;
+      m = [m j];
+      n(j) = numUniq+1;
+    end
+  end
